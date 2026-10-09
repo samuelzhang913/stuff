@@ -1,0 +1,29 @@
+name: hippo
+
+on:
+  push:
+    paths: ["hippo/**", ".github/workflows/hippo.yml"]
+  pull_request:
+    paths: ["hippo/**", ".github/workflows/hippo.yml"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hippo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Tests (unit, reproducibility, headline claims, artifacts, JS parity)
+        env:
+          REQUIRE_NODE: "1"
+        run: python -m unittest discover -s tests -t . -v

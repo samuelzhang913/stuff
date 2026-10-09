@@ -1,0 +1,682 @@
+<title>Hippo Memory Network</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+/* Layout: a full-bleed instrument canvas with HUD panels floating over its
+   left edge and bottom rail on desktop; on phones the HUD stacks below. */
+:root {
+  color-scheme: dark;
+  --bg: #07080e;
+  --panel: rgba(13, 15, 26, 0.86);
+  --panel-solid: #0d0f1a;
+  --rule: #262a40;
+  --fg: #cfd1e6;
+  --muted: #74789a;
+  --faint: #3b3f5c;
+  --episodic: #8f80f7;
+  --semantic: #f2b84b;
+  --recall: #52d6ca;
+  --good: #63d991;
+  --bad: #f0596f;
+  --evolve: #e693bb;
+  --font-ui: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;  --step--1: 0.6875rem;
+  --step-0: 0.75rem;
+  --step-1: 0.875rem;
+  --step-2: 1.125rem;
+}
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: var(--step-0);
+  font-variant-numeric: tabular-nums;
+}
+* { box-sizing: border-box; }
+button {
+  font: inherit; font-size: var(--step--1);
+  color: var(--fg); background: #151830;
+  border: 1px solid var(--rule); border-radius: 3px;
+  padding: 0.35rem 0.6rem; cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--recall); outline-offset: 1px; }
+button[aria-pressed="true"] { border-color: var(--recall); color: var(--recall); }
+select, input[type="range"] { font: inherit; font-size: var(--step--1); color: var(--fg); background: #151830; border: 1px solid var(--rule); border-radius: 3px; }
+select { padding: 0.3rem 0.4rem; }
+input[type="range"] { accent-color: var(--recall); width: 7rem; padding: 0; }
+
+.stage { position: relative; height: 100%; overflow: hidden; }
+canvas#net { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+.hud { position: absolute; inset: 0; pointer-events: none; padding: 14px 16px; display: grid;
+  grid-template-columns: 250px 1fr auto; grid-template-rows: auto 1fr auto; gap: 12px; }
+.hud > * { pointer-events: auto; min-width: 0; }
+
+.brand { grid-column: 1 / 3; grid-row: 1; align-self: start; }
+.brand h1 { font-family: var(--font-ui); font-weight: 700; font-size: var(--step-1); margin: 0 0 4px; letter-spacing: 0.01em; color: #fff; }
+.brand p { margin: 0; color: var(--muted); line-height: 1.55; }
+.keys { grid-column: 3; grid-row: 1; text-align: right; color: var(--muted); line-height: 1.6; font-size: var(--step--1); }
+.keys kbd { font-family: inherit; color: var(--fg); }
+
+.side { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; gap: 10px; align-self: start; }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; padding: 10px 12px; backdrop-filter: blur(3px); }
+.panel h2 { font-size: var(--step--1); font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; margin: 0 0 8px; color: #fff; }
+.rows { display: grid; grid-template-columns: 1fr auto; row-gap: 3px; column-gap: 10px; margin: 0; }
+.rows dt { color: var(--muted); }
+.rows dd { margin: 0; text-align: right; }
+.btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.on { color: var(--good); } .off { color: var(--bad); }
+.legend { display: grid; gap: 4px; color: var(--muted); font-size: var(--step--1); padding: 2px 2px 0; }
+.legend span { display: flex; align-items: center; gap: 8px; text-transform: uppercase; letter-spacing: 0.08em; }
+.legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+
+.bottom { grid-column: 1 / 4; grid-row: 3; display: grid; grid-template-columns: 250px 1fr auto; gap: 12px; align-items: end; }
+.inspect { min-height: 4.5rem; }
+.inspect .txt { color: #fff; line-height: 1.45; margin: 0 0 6px; overflow-wrap: anywhere; }
+.inspect .hint { color: var(--muted); margin: 0; }
+.ticker { background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; padding: 8px 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.ticker .q { color: var(--fg); }
+.ticker .tag { color: var(--muted); }
+.ticker .ok { color: var(--good); } .ticker .bad { color: var(--bad); }
+.meters { text-align: right; line-height: 1.6; color: var(--muted); }
+.meters b { color: var(--fg); font-weight: 500; }
+.meters canvas { display: block; margin: 4px 0 4px auto; width: 180px; height: 38px; }
+.transport { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; margin-top: 6px; }
+.transport label { color: var(--muted); font-size: var(--step--1); }
+#debug-out { margin-top: 6px; text-align: left; display: grid; gap: 4px; color: var(--muted); font-size: var(--step--1); }
+#debug-out textarea { width: min(100%, 28rem); font: inherit; color: var(--fg); background: var(--panel-solid);
+  border: 1px solid var(--rule); border-radius: 3px; padding: 6px; resize: vertical; }
+
+@media (max-width: 899px) {
+  html, body { height: auto; }
+  .stage { height: auto; overflow: visible; }
+  canvas#net { position: relative; height: 58vh; min-height: 340px; }
+  .hud { position: static; display: flex; flex-direction: column; padding: 12px 16px 24px; }
+  .keys { display: none; }
+  .brand { order: -1; }
+  .bottom { display: flex; flex-direction: column; align-items: stretch; }
+  .meters { text-align: left; }
+  .meters canvas { margin-left: 0; }
+  .transport { justify-content: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<main class="stage">
+  <canvas id="net" aria-label="Memory network: input entities on the left, episodic memories in columns by age, consolidated semantic memories on the right"></canvas>
+  <div class="hud">
+    <header class="brand">
+      <h1>Hippo Memory Network v1.0</h1>
+      <p>Encode · Recall · Consolidate · Forget<br>outcome credit + replay consolidation + strength decay</p>
+    </header>
+    <div class="keys">
+      click node = inspect<br>
+      <kbd>space</kbd> = toggle learning · <kbd>c</kbd> = consolidate<br>
+      <kbd>p</kbd> = prune weak · <kbd>k</kbd> = play / pause
+    </div>
+
+    <aside class="side">
+      <section class="panel" aria-labelledby="h-learn">
+        <h2 id="h-learn">Self-learning</h2>
+        <dl class="rows">
+          <dt>Status</dt><dd id="s-learn" class="on">ACTIVE</dd>
+          <dt>Queries</dt><dd id="s-queries">0</dd>
+          <dt>Accuracy (last 40)</dt><dd id="s-roll">–</dd>
+          <dt>Accuracy (run)</dt><dd id="s-acc">–</dd>
+          <dt>Discredited claims</dt><dd id="s-disc">0</dd>
+        </dl>
+        <div class="btns"><button id="b-learn" type="button">Toggle Learning [Space]</button></div>
+      </section>
+      <section class="panel" aria-labelledby="h-evo">
+        <h2 id="h-evo">Self-evolution</h2>
+        <dl class="rows">
+          <dt>Episodic</dt><dd id="s-epi">0</dd>
+          <dt>Semantic</dt><dd id="s-sem">0</dd>
+          <dt>Written</dt><dd id="s-written">0</dd>
+          <dt>Pruned</dt><dd id="s-pruned">0</dd>
+          <dt>Superseded</dt><dd id="s-sup">0</dd>
+          <dt>Replay passes</dt><dd id="s-passes">0</dd>
+        </dl>
+        <div class="btns">
+          <button id="b-cons" type="button">Consolidate [C]</button>
+          <button id="b-prune" type="button">Prune Weak [P]</button>
+        </div>
+      </section>
+      <div class="legend" aria-label="Legend">
+        <span><i style="background:var(--episodic)"></i>Episodic</span>
+        <span><i style="background:var(--semantic)"></i>Semantic</span>
+        <span><i style="background:var(--recall)"></i>Recalled</span>
+        <span><i style="background:var(--bad)"></i>Discredited</span>
+        <span><i style="background:var(--evolve)"></i>Forgetting</span>
+      </div>
+    </aside>
+
+    <div class="bottom">
+      <section class="panel inspect" aria-live="polite">
+        <div id="inspect"><p class="hint">Click a node to inspect it.</p></div>
+      </section>
+      <div class="ticker" id="ticker" aria-live="off"><span class="tag">Waiting for the first query…</span></div>
+      <div class="meters">
+        <div>TICK <b id="m-tick">0</b> · CTX/QUERY <b id="m-ctx">0</b> tok</div>
+        <canvas id="spark" width="360" height="76" aria-label="Rolling accuracy"></canvas>
+        <div>LEARNING RATE <b>0.35</b> · PYTHON PARITY <b id="m-parity">–</b></div>
+        <div class="transport">
+          <button id="b-play" type="button" aria-pressed="true">Pause [K]</button>
+          <label for="speed">Speed</label>
+          <input id="speed" type="range" min="1" max="120" value="14">
+          <select id="seed" aria-label="Run"><option value="0">Run A</option><option value="1">Run B</option><option value="2">Run C</option></select>
+          <button id="b-restart" type="button">Restart</button>
+          <button id="b-debug" type="button">Copy debug state</button>
+        </div>
+        <div id="debug-out" hidden>
+          <label for="debug-text">Copying was blocked here. Select all and copy this instead:</label>
+          <textarea id="debug-text" rows="6" readonly></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script id="data" type="application/json">/*DATA*/</script>
+<script>/*ENGINE*/</script>
+<script>
+(() => {
+"use strict";
+const DATA = JSON.parse(document.getElementById("data").textContent);
+const E = window.HippoEngine;
+const ENTITIES = ["auth-service","billing-worker","ingest-pipeline","search-index","notify-daemon","ledger-api",
+  "image-resizer","session-cache","report-builder","webhook-relay","quota-manager","trace-collector"];
+const TAG_LABEL = { stable: "restated often", volatile_pre: "before a change", volatile_post: "after a change",
+  rare: "said once, long ago", unreliable: "contested by a rumour" };
+const css = getComputedStyle(document.documentElement);
+const C = Object.fromEntries(["episodic","semantic","recall","good","bad","evolve","fg","muted","faint","rule"]
+  .map(k => [k, css.getPropertyValue("--" + k).trim()]));
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const cv = document.getElementById("net"), ctx = cv.getContext("2d");
+const staticCv = document.createElement("canvas"), sctx = staticCv.getContext("2d");
+const spark = document.getElementById("spark"), spx = spark.getContext("2d");
+const $ = id => document.getElementById(id);
+
+function rgba(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`;
+}
+const entityOf = (text, slot) => slot ? slot[0] : (text.match(/[a-z]+-[a-z]+/) || [""])[0];
+
+// ------------------------------------------------------------- run state
+let run, agent, events, cursor, vis, pulses, rolling, hits, totalQ, sparkSeries, parity, diverged, selected;
+let recentQueries = [], actions = [];   // for "Copy debug state"
+let playing = true, speed = 14, acc = 0, W = 0, H = 0, dpr = 1, geo = null, staticDirty = true, lastStatic = 0;
+
+function start(seed) {
+  run = DATA.seeds[String(seed)];
+  agent = new E.Agent(E.defaultConfig());
+  events = run.events; cursor = 0;
+  vis = new Map(); pulses = []; rolling = []; hits = 0; totalQ = 0; sparkSeries = [];
+  parity = 0; diverged = false; selected = null;
+  recentQueries = []; actions = [];
+  semSlots = new Map(); semCount = 0; pendingSemPos = [];
+  epiIndex = 0;
+  $("ticker").innerHTML = '<span class="tag">Waiting for the first query…</span>';
+  $("inspect").innerHTML = '<p class="hint">Click a node to inspect it.</p>';
+  syncLearn(); layout(); staticDirty = true; updatePanels();
+}
+
+// ------------------------------------------------------------- layout
+let semSlots, semCount, pendingSemPos, epiIndex;
+const N_OBS = () => events.filter(e => e[0] === "o").length;
+
+function layout() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  const r = cv.getBoundingClientRect();
+  W = r.width; H = r.height;
+  for (const c of [cv, staticCv]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const wide = W >= 900;
+  const top = wide ? 112 : 22, bottom = wide ? H - 120 : H - 18;
+  const inputX = wide ? Math.max(410, W * 0.26) : 46;
+  const semX = W - (wide ? 70 : 22);
+  const epiL = inputX + (wide ? 70 : 34), epiR = semX - (wide ? 70 : 34);
+  const bands = wide ? 6 : 4;
+  const cap = Math.ceil((N_OBS() + 4) / bands);
+  const usable = bottom - top;
+  const sub = Math.max(1, Math.ceil(cap * 6 / usable));
+  const rowsPer = Math.ceil(cap / sub);
+  geo = { wide, top, bottom, inputX, semX, epiL, epiR, bands, cap, sub, rowsPer, usable, labels: W >= 700 };
+  // reposition every existing node
+  for (const v of vis.values()) {
+    if (v.kind === "episodic") Object.assign(v, epiPos(v.slotIdx));
+    else Object.assign(v, semPos(v.slotIdx));
+  }
+  staticDirty = true;
+}
+function inputPos(ent) {
+  const i = Math.max(0, ENTITIES.indexOf(ent));
+  const { top, bottom, inputX } = geo;
+  return { x: inputX, y: top + (i + 0.5) * (bottom - top) / ENTITIES.length };
+}
+function epiPos(idx) {
+  const { bands, cap, sub, rowsPer, epiL, epiR, top, usable } = geo;
+  const band = Math.min(bands - 1, Math.floor(idx / cap));
+  const within = idx - band * cap;
+  const s = Math.floor(within / rowsPer), row = within % rowsPer;
+  const bandW = (epiR - epiL) / Math.max(1, bands - 1);
+  const x = epiL + band * bandW + (s - (sub - 1) / 2) * 7 + ((row * 37) % 5 - 2) * 0.6;
+  const y = top + (row + 0.5) * usable / rowsPer;
+  return { x, y };
+}
+function semPos(idx) {
+  const { semX, top, usable } = geo;
+  const per = 48, col = Math.floor(idx / per), row = idx % per;
+  return { x: semX - col * 14, y: top + (row + 0.5) * usable / per };
+}
+
+// ------------------------------------------------------------- visuals from engine events
+function now() { return performance.now(); }
+function addPulse(a, b, color, dur, width) {
+  if (reduceMotion) return;
+  pulses.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, color, t0: now(), dur, width });
+  if (pulses.length > 600) pulses.splice(0, pulses.length - 600);
+}
+
+function handle(ev) {
+  const t = now();
+  if (ev.type === "write") {
+    const it = ev.item;
+    let v;
+    if (it.layer === "episodic") {
+      v = { kind: "episodic", item: it, slotIdx: epiIndex++, born: t, ent: entityOf(it.text, it.slot) };
+      Object.assign(v, epiPos(v.slotIdx));
+      vis.set(it.id, v);
+      addPulse(inputPos(v.ent), v, C.episodic, 520, 1.2);
+      inputFlash(v.ent, C.episodic);
+    } else {
+      let idx;
+      const key = it.slot ? it.slot[0] + "|" + it.slot[1] : null;
+      if (key && semSlots.has(key)) idx = semSlots.get(key);
+      else if (!key && pendingSemPos.length) idx = pendingSemPos.shift();
+      else { idx = semCount++; if (key) semSlots.set(key, idx); }
+      v = { kind: "semantic", item: it, slotIdx: idx, born: t };
+      Object.assign(v, semPos(idx));
+      vis.set(it.id, v);
+      for (const sid of it.support) { const sv = vis.get(sid); if (sv && sv.item.alive) addPulse(sv, v, C.semantic, 900, 1); }
+    }
+    staticDirty = true;
+  } else if (ev.type === "kill") {
+    const v = vis.get(ev.item.id);
+    if (v) {
+      v.dying = t; v.dieReason = ev.reason;
+      if (v.kind === "semantic" && !ev.item.slot) pendingSemPos.push(v.slotIdx);
+    }
+    staticDirty = true;
+  } else if (ev.type === "recall") {
+    const ent = (ev.query.match(/[a-z]+-[a-z]+/) || [""])[0];
+    const src = inputPos(ent);
+    inputFlash(ent, C.recall);
+    const total = ev.results.reduce((s, r) => s + Math.max(r.score, 1e-6), 0) || 1;
+    for (const r of ev.results) {
+      const v = vis.get(r.item.id); if (!v) continue;
+      v.glow = t;
+      addPulse(src, v, C.recall, 650, 0.8 + 3 * r.score / total);
+    }
+  } else if (ev.type === "feedback") {
+    const col = !ev.enabled ? C.muted : ev.reward > 0 ? C.good : C.bad;
+    for (const id of ev.ids) { const v = vis.get(id); if (v) { v.flash = t; v.flashCol = col; } }
+  } else if (ev.type === "supersede") {
+    staticDirty = true;
+  }
+}
+
+const inputFlashes = new Map();
+function inputFlash(ent, color) { inputFlashes.set(ent, { t: now(), color }); }
+
+// ------------------------------------------------------------- stepping
+function stepOne() {
+  if (cursor >= events.length) return false;
+  const [kind, text, slot, gold, tag] = events[cursor];
+  if (kind === "o") agent.observe(text, slot);
+  else {
+    const res = agent.recall(text);
+    const ans = E.readAnswer(slot, res);
+    const ok = ans === gold;
+    agent.feedback(ok ? 1 : -1);
+    const qi = totalQ;
+    totalQ++; hits += ok; rolling.push(ok ? 1 : 0); if (rolling.length > 40) rolling.shift();
+    sparkSeries.push(rolling.reduce((a, b) => a + b, 0) / rolling.length);
+    if (!diverged) { if ((ok ? 1 : 0) === run.reference[qi]) parity++; else diverged = true; }
+    recentQueries.push({ query_index: qi, tick: agent.store.clock, query: text, tag, gold, answer: ans, ok,
+      retrieved: res.map(r => ({ id: r.item.id, layer: r.item.layer, score: +r.score.toFixed(5),
+                                 value: r.item.slot ? r.item.slot[2] : null, text: r.item.text })) });
+    if (recentQueries.length > 12) recentQueries.shift();
+    showQuery(text, ans, gold, ok, tag);
+  }
+  cursor++;
+  agent.maintain();
+  for (const ev of agent.drain()) handle(ev);
+  return true;
+}
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function showQuery(text, ans, gold, ok, tag) {
+  $("ticker").innerHTML =
+    `<span class="q">Q ${esc(text)}</span> → <span class="${ok ? "ok" : "bad"}">${esc(ans ?? "no memory found")} ${ok ? "✓" : "✗"}</span>` +
+    (ok ? "" : ` <span class="tag">expected ${esc(gold)}</span>`) +
+    ` <span class="tag">· ${esc(TAG_LABEL[tag] || tag)}</span>`;
+}
+
+// ------------------------------------------------------------- drawing
+function drawStatic() {
+  sctx.clearRect(0, 0, W, H);
+  // input -> episode wiring
+  sctx.lineWidth = 0.5;
+  sctx.strokeStyle = rgba(C.fg, 0.045);
+  sctx.beginPath();
+  for (const v of vis.values()) {
+    if (v.kind !== "episodic" || !v.item.alive) continue;
+    const p = inputPos(v.ent);
+    sctx.moveTo(p.x, p.y); sctx.lineTo(v.x, v.y);
+  }
+  sctx.stroke();
+  // episode -> abstraction support
+  sctx.strokeStyle = rgba(C.semantic, 0.11);
+  sctx.beginPath();
+  for (const v of vis.values()) {
+    if (v.kind !== "semantic" || !v.item.alive) continue;
+    for (const sid of v.item.support) {
+      const sv = vis.get(sid);
+      if (sv && sv.item.alive) { sctx.moveTo(sv.x, sv.y); sctx.lineTo(v.x, v.y); }
+    }
+  }
+  sctx.stroke();
+  // input column
+  sctx.font = `500 9px ${css.getPropertyValue("--font-ui")}`;
+  sctx.textAlign = "right"; sctx.textBaseline = "middle";
+  for (const ent of ENTITIES) {
+    const p = inputPos(ent);
+    if (geo.labels) { sctx.fillStyle = C.muted; sctx.fillText(ent.toUpperCase(), p.x - 10, p.y); }
+  }
+  // column captions
+  if (geo.labels) {
+    sctx.textAlign = "center"; sctx.fillStyle = C.faint;
+    for (let b = 0; b < geo.bands; b++) {
+      const bandW = (geo.epiR - geo.epiL) / Math.max(1, geo.bands - 1);
+      sctx.fillText(b === 0 ? "EPISODIC · OLDEST" : b === geo.bands - 1 ? "NEWEST" : "EPISODIC", geo.epiL + b * bandW, geo.top - 16);
+    }
+    sctx.fillText("SEMANTIC", geo.semX, geo.top - 16);
+    sctx.fillText("INPUT", geo.inputX, geo.top - 16);
+  }
+}
+
+function nodeStyle(v) {
+  const it = v.item;
+  const rel = agent.store.reliability(it.slot);
+  if (v.kind === "semantic") {
+    const r = 3 + 1.6 * Math.tanh(it.strength);
+    return { r, color: rel < 0.7 ? C.bad : C.semantic, a: 0.55 + 0.45 * Math.min(1, it.strength / 1.4) };
+  }
+  const r = 1.4 + 1.6 * Math.tanh(it.strength);
+  if (rel < 0.7) return { r, color: C.bad, a: 0.4 + 0.5 * rel };
+  if (it.supersededBy !== null) return { r, color: C.evolve, a: 0.28 };
+  return { r, color: C.episodic, a: 0.22 + 0.78 * Math.min(1, it.strength) };
+}
+
+function frame(ts) {
+  requestAnimationFrame(frame);
+  const t = now();
+  // advance the simulation
+  if (playing && cursor < events.length) {
+    acc += speed / 60;
+    let n = Math.min(60, Math.floor(acc));
+    acc -= n;
+    while (n-- > 0 && stepOne()) {}
+  } else if (playing && cursor >= events.length && !run.endAt) {
+    run.endAt = t;
+  }
+  if (run.endAt && t - run.endAt > 6000 && playing) {
+    delete run.endAt;
+    const s = $("seed"); s.value = String((+s.value + 1) % 3); start(+s.value);
+  }
+  if (staticDirty && (t - lastStatic > 140 || !playing)) { drawStatic(); staticDirty = false; lastStatic = t; }
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(staticCv, 0, 0, W, H);
+
+  // pulses: a bright head travelling the edge, leaving a fading trace
+  const keep = [];
+  ctx.lineCap = "round";
+  for (const p of pulses) {
+    const k = (t - p.t0) / p.dur;
+    if (k >= 1.6) continue;
+    keep.push(p);
+    const head = Math.min(1, k);
+    const hx = p.x1 + (p.x2 - p.x1) * head, hy = p.y1 + (p.y2 - p.y1) * head;
+    const fade = k > 1 ? 1 - (k - 1) / 0.6 : 1;
+    ctx.strokeStyle = rgba(p.color, 0.22 * fade);
+    ctx.lineWidth = p.width;
+    ctx.beginPath(); ctx.moveTo(p.x1, p.y1); ctx.lineTo(hx, hy); ctx.stroke();
+    if (k < 1) { ctx.fillStyle = rgba(p.color, 0.95); ctx.beginPath(); ctx.arc(hx, hy, 1.6 + p.width * 0.4, 0, 7); ctx.fill(); }
+  }
+  pulses = keep;
+
+  // input nodes
+  for (const ent of ENTITIES) {
+    const p = inputPos(ent), f = inputFlashes.get(ent);
+    const k = f ? Math.max(0, 1 - (t - f.t) / 500) : 0;
+    ctx.fillStyle = k ? f.color : C.faint;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3.2 + 2 * k, 0, 7); ctx.fill();
+    if (k) { ctx.fillStyle = rgba(f.color, 0.25 * k); ctx.beginPath(); ctx.arc(p.x, p.y, 9 * k + 4, 0, 7); ctx.fill(); }
+  }
+
+  // memory nodes
+  for (const [id, v] of vis) {
+    const it = v.item;
+    if (v.dying) {
+      const k = (t - v.dying) / 900;
+      if (k >= 1 || reduceMotion) { if (v !== selected) vis.delete(id); continue; }
+      ctx.strokeStyle = rgba(C.evolve, 1 - k); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(v.x, v.y, 2 + 6 * k, 0, 7); ctx.stroke();
+      continue;
+    }
+    const s = nodeStyle(v);
+    const grow = v.kind === "semantic" ? Math.min(1, (t - v.born) / 700) : 1;
+    ctx.fillStyle = rgba(s.color, s.a);
+    ctx.beginPath(); ctx.arc(v.x, v.y, s.r * (0.3 + 0.7 * grow), 0, 7); ctx.fill();
+    if (v.glow) {
+      const k = 1 - (t - v.glow) / 900;
+      if (k > 0) { ctx.fillStyle = rgba(C.recall, 0.35 * k); ctx.beginPath(); ctx.arc(v.x, v.y, s.r + 6 * k, 0, 7); ctx.fill(); }
+      else v.glow = 0;
+    }
+    if (v.flash) {
+      const k = 1 - (t - v.flash) / 650;
+      if (k > 0) { ctx.strokeStyle = rgba(v.flashCol, k); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(v.x, v.y, s.r + 3, 0, 7); ctx.stroke(); }
+      else v.flash = 0;
+    }
+  }
+
+  // selection
+  if (selected) {
+    const v = selected;
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(v.x, v.y, 7, 0, 7); ctx.stroke();
+    if (v.kind === "semantic") {
+      ctx.strokeStyle = rgba(C.semantic, 0.6); ctx.lineWidth = 0.8; ctx.beginPath();
+      for (const sid of v.item.support) { const sv = vis.get(sid); if (sv) { ctx.moveTo(sv.x, sv.y); ctx.lineTo(v.x, v.y); } }
+      ctx.stroke();
+    } else {
+      const p = inputPos(v.ent);
+      ctx.strokeStyle = rgba(C.episodic, 0.7); ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(v.x, v.y); ctx.stroke();
+    }
+  }
+
+  if (Math.floor(t / 120) !== frame.lastUi) { frame.lastUi = Math.floor(t / 120); updatePanels(); }
+}
+
+// ------------------------------------------------------------- panels
+function updatePanels() {
+  const st = agent.store;
+  let epi = 0, sem = 0;
+  for (const it of st.items.values()) if (it.alive) it.layer === "episodic" ? epi++ : sem++;
+  let disc = 0; for (const r of st.valueReliability.values()) if (r < 0.7) disc++;
+  $("s-queries").textContent = totalQ;
+  $("s-roll").textContent = rolling.length ? (rolling.reduce((a, b) => a + b, 0) / rolling.length).toFixed(3) : "–";
+  $("s-acc").textContent = totalQ ? (hits / totalQ).toFixed(3) : "–";
+  $("s-disc").textContent = disc;
+  $("s-epi").textContent = epi; $("s-sem").textContent = sem;
+  $("s-written").textContent = st.stats.written; $("s-pruned").textContent = st.stats.pruned;
+  $("s-sup").textContent = st.stats.superseded; $("s-passes").textContent = agent.log.passes;
+  $("m-tick").textContent = st.clock;
+  $("m-ctx").textContent = agent.log.retrievals ? (agent.log.contextTokens / agent.log.retrievals).toFixed(1) : "0";
+  $("m-parity").textContent = diverged ? "diverged (run modified)" : totalQ ? `${parity}/${totalQ} match` : "–";
+  drawSpark();
+  if (selected) renderInspect();
+}
+
+function drawSpark() {
+  const w = spark.width, h = spark.height;
+  spx.clearRect(0, 0, w, h);
+  spx.strokeStyle = rgba(C.fg, 0.08); spx.lineWidth = 1;
+  for (const g of [0.25, 0.5, 0.75]) { spx.beginPath(); spx.moveTo(0, h - g * h); spx.lineTo(w, h - g * h); spx.stroke(); }
+  if (sparkSeries.length < 2) return;
+  const n = sparkSeries.length, total = Math.max(n, run.reference.length);
+  const X = i => i / (total - 1) * w, Y = v => h - 4 - v * (h - 8);
+  spx.beginPath(); spx.moveTo(X(0), h);
+  sparkSeries.forEach((v, i) => spx.lineTo(X(i), Y(v)));
+  spx.lineTo(X(n - 1), h); spx.closePath();
+  spx.fillStyle = rgba(C.recall, 0.14); spx.fill();
+  spx.beginPath(); sparkSeries.forEach((v, i) => i ? spx.lineTo(X(i), Y(v)) : spx.moveTo(X(i), Y(v)));
+  spx.strokeStyle = C.recall; spx.lineWidth = 2; spx.stroke();
+  spx.fillStyle = "#fff"; spx.beginPath(); spx.arc(X(n - 1), Y(sparkSeries[n - 1]), 3.5, 0, 7); spx.fill();
+}
+
+function renderInspect() {
+  const v = selected, it = v.item, st = agent.store;
+  const rel = it.slot ? st.reliability(it.slot) : null;
+  const state = !it.alive ? (v.dieReason === "pruned" ? "forgotten (pruned)" : "replaced") :
+    it.supersededBy !== null ? "superseded" : "active";
+  $("inspect").innerHTML =
+    `<p class="txt">${esc(it.text)}</p><dl class="rows">` +
+    `<dt>Kind</dt><dd>${it.layer}${it.layer === "semantic" ? ` · ${it.support.length} episodes` : ""}</dd>` +
+    `<dt>State</dt><dd>${state}</dd>` +
+    `<dt>Strength</dt><dd>${it.strength.toFixed(3)}</dd>` +
+    (rel !== null ? `<dt>Claim reliability</dt><dd>${rel.toFixed(3)}</dd>` : "") +
+    `<dt>Recalled</dt><dd>${it.accessCount}×</dd>` +
+    `<dt>Age</dt><dd>${st.clock - it.tCreated} ticks</dd></dl>`;
+}
+
+// ------------------------------------------------------------- input
+function pick(x, y) {
+  let best = null, bd = 100;
+  for (const v of vis.values()) {
+    if (v.dying) continue;
+    const d = (v.x - x) ** 2 + (v.y - y) ** 2;
+    if (d < bd) { bd = d; best = v; }
+  }
+  return best;
+}
+cv.addEventListener("click", e => {
+  const r = cv.getBoundingClientRect();
+  selected = pick(e.clientX - r.left, e.clientY - r.top);
+  if (selected) renderInspect(); else $("inspect").innerHTML = '<p class="hint">Click a node to inspect it.</p>';
+});
+cv.addEventListener("mousemove", e => {
+  const r = cv.getBoundingClientRect();
+  cv.style.cursor = pick(e.clientX - r.left, e.clientY - r.top) ? "pointer" : "default";
+});
+
+function syncLearn() {
+  const on = agent.cfg.credit.enabled;
+  $("s-learn").textContent = on ? "ACTIVE" : "PAUSED";
+  $("s-learn").className = on ? "on" : "off";
+}
+// Manual actions are logged with the event index they happened before, so a
+// modified run can be replayed exactly from the debug export.
+function logAction(type, extra) { actions.push({ type, before_event: cursor, tick: agent.store.clock, ...extra }); }
+function toggleLearn() {
+  agent.cfg.credit.enabled = !agent.cfg.credit.enabled;
+  logAction("set_learning", { enabled: agent.cfg.credit.enabled });
+  diverged = true; syncLearn(); updatePanels();
+}
+function consolidate() {
+  logAction("consolidate");
+  agent.consolidateNow(); for (const ev of agent.drain()) handle(ev); diverged = true; updatePanels();
+}
+function prune() {
+  const n = agent.pruneWeak(0.3);
+  logAction("prune_weak", { threshold: 0.3, pruned: n });
+  for (const ev of agent.drain()) handle(ev); diverged = true; updatePanels();
+}
+
+function debugState() {
+  const st = agent.store;
+  const live = st.liveItems();
+  const mem = it => it && {
+    id: it.id, layer: it.layer, text: it.text, slot: it.slot, alive: it.alive,
+    strength: +it.strength.toFixed(5), reliability: it.slot ? +st.reliability(it.slot).toFixed(5) : null,
+    superseded_by: it.supersededBy, recalled: it.accessCount, created_tick: it.tCreated,
+    support: it.support.length ? it.support : undefined,
+  };
+  const discredited = [...st.valueReliability].filter(([, r]) => r < 0.7)
+    .map(([k, r]) => ({ claim: k.split("\u0001"), reliability: +r.toFixed(5) }));
+  return {
+    what: "hippo memory network debug export",
+    run: { seed: +$("seed").value, next_event_index: cursor, total_events: events.length, tick: st.clock },
+    reproduces_python_reference: !diverged,
+    manual_actions: actions,
+    learning_enabled: agent.cfg.credit.enabled,
+    accuracy: { queries: totalQ, run: totalQ ? +(hits / totalQ).toFixed(4) : null,
+                last_40: rolling.length ? +(rolling.reduce((a, b) => a + b, 0) / rolling.length).toFixed(4) : null },
+    store: { live: live.length, episodic: live.filter(i => i.layer === "episodic").length,
+             semantic: live.filter(i => i.layer === "semantic").length, ...st.stats, replay_passes: agent.log.passes },
+    discredited_claims: discredited,
+    selected_memory: selected ? mem(selected.item) : null,
+    recent_queries: recentQueries,
+  };
+}
+async function copyDebug() {
+  const text = JSON.stringify(debugState(), null, 1);
+  const btn = $("b-debug");
+  try {
+    await navigator.clipboard.writeText(text);
+    $("debug-out").hidden = true;
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = "Copy debug state"; }, 1600);
+  } catch {
+    const ta = $("debug-text");
+    ta.value = text; $("debug-out").hidden = false; ta.focus(); ta.select();
+  }
+}
+function togglePlay() {
+  playing = !playing;
+  $("b-play").textContent = playing ? "Pause [K]" : "Play [K]";
+  $("b-play").setAttribute("aria-pressed", String(playing));
+}
+
+$("b-learn").onclick = toggleLearn;
+$("b-cons").onclick = consolidate;
+$("b-prune").onclick = prune;
+$("b-play").onclick = togglePlay;
+$("b-restart").onclick = () => start(+$("seed").value);
+$("b-debug").onclick = copyDebug;
+$("seed").onchange = () => start(+$("seed").value);
+$("speed").oninput = e => { speed = +e.target.value; };
+document.addEventListener("keydown", e => {
+  if (e.target.isContentEditable || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+  const k = e.key.toLowerCase();
+  if (k === " ") { e.preventDefault(); toggleLearn(); }
+  else if (k === "c") consolidate();
+  else if (k === "p") prune();
+  else if (k === "k") togglePlay();
+});
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(layout, 120); });
+
+// Open mid-run so the first frame already shows a populated network.
+start(0);
+for (let i = 0; i < 260; i++) stepOne();
+pulses = [];
+requestAnimationFrame(frame);
+})();
+</script>
