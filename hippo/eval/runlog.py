@@ -28,7 +28,9 @@ def _git(*args):
 
 def code_version():
     sha = _git("rev-parse", "HEAD")
-    status = _git("status", "--porcelain", "--", ".")
+    # The log itself lives in runs/, so writing one entry must not make the
+    # next run look dirty. Only code changes count.
+    status = _git("status", "--porcelain", "--", ".", ":(exclude)runs")
     return {"git_sha": sha, "dirty": bool(status) if status is not None else None}
 
 

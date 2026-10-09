@@ -122,6 +122,19 @@ class Tooling(unittest.TestCase):
             self.assertEqual([r["args"]["a"] for r in rows], [1, 2])
             self.assertIn("git_sha", rows[0])
 
+    def test_writing_the_log_does_not_make_the_tree_dirty(self):
+        # Regression: the second of two back-to-back runs was flagged dirty
+        # because the first run's log entry counted as an uncommitted change.
+        if runlog._git("rev-parse", "HEAD") is None:
+            self.skipTest("not a git checkout")
+        before = runlog.code_version()["dirty"]
+        probe = runlog.ROOT / "runs" / "_dirty_probe.jsonl"
+        try:
+            runlog.append("probe", {}, {}, path=probe)
+            self.assertEqual(runlog.code_version()["dirty"], before)
+        finally:
+            probe.unlink(missing_ok=True)
+
 
 if __name__ == "__main__":
     unittest.main()
