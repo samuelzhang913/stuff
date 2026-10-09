@@ -3,6 +3,8 @@
 10 seeds × 8 conditions, ~820 events per run (≈700 observations, ≈120 queries).
 Deterministic reader, so accuracy measures retrieval ranking alone.
 Reproduce with `python -m eval.run_ablations --seeds 10` and `python -m eval.decay_sweep`.
+Logged in `runs/log.jsonl`: ablation at commit `ec547a57`, decay sweep at `023a50b6`,
+both from clean trees. The engine code is identical at both commits.
 
 ## Ablation
 
